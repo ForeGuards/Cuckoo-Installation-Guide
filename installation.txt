@@ -1,0 +1,277 @@
+Step 1: Go to https://ubuntu.com/download/desktop and download the .iso.
+
+Step 2: Using the hypervisor of your choice (VMWare Workstation / VirtualBox / VMWare ESXi etc) install the base Ubuntu 20 Desktop.
+
+NOTE ==> 
+Make sure that you have set enough RAM and Hard Drive space for your Ubuntu 20 Desktop as you will be running a Windows 7 Virtual Machine inside it with a minimum 4GB RAM and 60 – 80GB Hard Drive.
+
+Step 3: When installing make sure you don’t call your username “cuckoo” otherwise this may conflict with the installation later.
+
+Step 4: Make sure that your Virtual Machine has the VT-x capability enabled. Also make sure you have assigned enough RAM as you will need at least 4GB for your Windows 7 Virtual Machine.
+
+
+log in
+
+lunch terminal
+
+sudo apt-get update && sudo apt-get upgrade -y
+
+sudo adduser cuckoo
+
+sudo adduser cuckoo sudo
+
+sudo apt-get install curl
+
+curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py
+
+sudo apt-get install python
+
+sudo python get-pip.py
+
+sudo apt-get install -y python-dev libffi-dev libssl-dev libfuzzy-dev libtool flex autoconf libjansson-dev git
+
+sudo apt-get install -y python-setuptools
+
+sudo apt-get install -y libjpeg-dev zlib1g-dev swig
+
+sudo apt-get install -y mongodb
+
+sudo apt-get install -y postgresql libpq-dev
+
+sudo apt-get install -y virtualbox
+
+cd Downloads/
+
+~/Downloads
+
+git clone https://github.com/volatilityfoundation/volatility.git 
+
+cd volatility
+
+sudo python setup.py build
+
+sudo python setup.py install
+
+cd ..
+
+sudo -H pip install distorm3==3.4.4
+
+sudo -H pip install yara-python==3.6.3
+
+
+sudo apt-get install -y ssdeep
+
+ssdeep -V
+
+sudo -H pip install pydeep
+
+pip show pydeep
+
+sudo -H pip install openpyxl
+
+sudo -H pip install ujson
+
+sudo -H pip install jupyter
+
+sudo apt-get install tcpdump 
+
+sudo apt-get install libcap2-bin 
+
+sudo setcap cap_net_raw,cap_net_admin=eip /usr/sbin/tcpdump
+
+getcap /usr/sbin/tcpdump
+
+sudo apt-get install -y apparmor-utils
+
+sudo aa-disable /usr/sbin/tcpdump
+
+pip install -U pip setuptools
+
+sudo -H pip install -U cuckoo
+
+cuckoo
+
+sudo apt install -y net-tools
+
+ifconfig
+
+vboxmanage hostonlyif create
+
+vboxmanage hostonlyif ipconfig vboxnet0 --ip 192.168.56.1
+
+ifconfig
+
+sudo mkdir /opt/systemd/
+
+sudo nano /opt/systemd/vboxhostonly
+
+!/bin/bash
+hostonlyif create
+vboxmanage hostonlyif ipconfig vboxnet0 --ip 192.168.56.1
+
+Ctrl + X to exit , Y, Enter
+
+cd /opt/systemd/
+
+sudo chmod a+x vboxhostonly
+
+sudo touch /etc/systemd/system/vboxhostonlynic.service
+
+sudo nano /etc/systemd/system/vboxhostonlynic.service
+
+Description=Setup VirtualBox Hostonly Adapter
+After=vboxdrv.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/systemd/vboxhostonly
+
+[Install]
+WantedBy=multi-user.target
+
+Ctrl + X to exit , Y, Enter
+
+systemctl daemon-reload
+systemctl enable vboxhostonlynic.service
+
+Start Virtualbox and create a VM 
+
+Name = cuckoo1
+RAM = minimum 4GB better 8GB
+Disk = 80GB VDI Format
+ISO = Windows 7
+
+run the command:
+VBoxManage modifyvm cuckoo1 --nested-hw-virt on
+
+Start the VM and install it.
+
+Once installed:
+
+Edit Group Policy
+
+1. Expand Computer Configuration > Windows Settings > Security Settings > Local Policies > Security Options. Scroll down to the User Account Control options
+
+“User Account Control: Behavior of the elevation prompt for administrators in Admin Approval Mode” ==> Elevate without prompting
+
+User Account Control: Detect application installations and prompt for elevation” ==> Disabled
+
+User Account Control: Run all administrators in Admin Approval Mode” ==> Disabled
+
+2. Computer Configuration > Administrative Templates > Windows Components > Windows Update > Configure Automatic Updates
+
+Select Enabled, 2- Notify for download and notify for install, then click ok
+
+3.Computer Configuration > Administrative Templates > Network > Network connections > Windows Firewall > Domain Profile > Windows Firewall and change “Protect all network connections” ==> Disabled.
+
+4.Computer Configuration > Administrative Templates > Windows Components > Windows Defender Antivirus then set “Turn off Windows Defender Antivirus” ==> Enabled
+
+Install Virtualbox Guest and Create Shared Folder
+
+Download (from host) and install these msi on Windows 7
+
+https://www.python.org/ftp/python/2.7.8/python-2.7.8.amd64.msi 
+https://pypi.python.org/packages/2.7/P/Pillow/Pillow-2.5.3.win-amd64-py2.7.exe#md5=33c3a581ff1538b4f79b4651084090c8 
+
+Upload the agent.py from ~/.cuckoo/agent to Win7 and copy it to C:\Users\*USERNAME*\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup 
+
+On Windows 7 Organizse > Folder Options enable "Show hidden files"
+
+Reboot the Windows 7 Virtual Machine and log in
+
+Allow Firewall rule on Windows 7 and minimaze command window
+
+On Virtualbox > cuckoo1 select Network and then change Attached to: Host-only Adapter and select vboxnet0
+
+sudo apt-get install -y iptables-persistent
+
+
+Now we need to configure IP forwarding so an internet connection gets routed from the host machine to the guest Virtual Machine. We will use iptables to set these network forwarding rules: 
+
+ifconfig > make sure the name of your interface
+
+sudo iptables -A FORWARD -o ens160 -i vboxnet0 -s 192.168.56.0/24 -m conntrack --ctstate NEW -j ACCEPT
+
+sudo iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+sudo iptables -t nat -A POSTROUTING -o enso160 -j MASQUERADE
+
+sudo iptables -L
+
+Now enable IP forwarding in the kernel so that these settings are set to Active (required for WWW Internet access):
+
+echo 1 | sudo tee -a /proc/sys/net/ipv4/ip_forward 
+sudo sysctl -w net.ipv4.ip_forward=1
+
+sudo nano /etc/sysctl.conf
+Remove the # from net.ipv4.ip_forward=1 
+then Ctrl + X to exit , Y to save
+
+sudo su
+iptables-save > /etc/iptables/rules.v4
+
+Now we need to configure Win7 network adapter
+
+IP = 192.168.56.101
+Subnet = 255.255.255.0
+Gateway = 192.168.56.1
+DNS = 8.8.8.8 / 8.8.4.4
+
+Click OK
+
+Create a snapshot called Snapshot1
+
+exit from sudo modus
+
+cd ~/.cuckoo/conf
+
+sudo nano cuckoo.conf
+machinery = virtualbox
+memory_dump = yes
+ip = 192.168.56.1
+then Ctrl + X to exit , Y to save
+
+sudo nano auxiliary.conf
+sniffer enabled = yes
+then Ctrl + X to exit , Y to save 
+
+sudo nano virtualbox.conf
+virtualbox mode = gui
+machines = cuckoo1
+optional = label = cuckoo1 and platform = windows
+ip = 192.168.56.101
+snapshot = Snapshot1
+Then Ctrl + X to exit , Y to save
+
+sudo nano processing.conf
+memory enabled = yes then Ctrl + X to exit , Y to save
+
+sudo nano memory.conf
+basic guest_profile = Win7SP1x64 
+then Ctrl + X to exit , Y to save 
+
+If you require another Operating System then yo ucna get a full list of the supported profiles by running 
+
+vol.py --info |grep Profiles -A48
+
+sudo nano reporting.conf
+enabled = yes
+Report.html enabled = yes 
+mongodb enabled = yes 
+then Ctrl + X to exit , Y to save
+
+shutdown your Windows 7 Virtual Machine, then reboot your Ubuntu Virtual Machine. Log back in as the same user (do not log in as the cuckoo user)
+
+cuckoo community
+
+Now open VirtualBox Manager and start your cuckoo1 Virtual Machine and minimaze the command window
+
+
+Open two terminal
+Now in Terminal window 1 type cuckoo and press enter
+
+In the second Terminal window type 
+
+cuckoo web runserver 0.0.0.0:8000
+
+visit the Cuckoo Web Server via 127.0.0.1:8000 
